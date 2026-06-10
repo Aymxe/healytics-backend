@@ -5,7 +5,8 @@ const {
   getPatientById,
   getPatientMedicalFile,
   getPatientAppointments,
-  bookAppointment
+  bookAppointment,
+  updatePatient
 } = require('../controllers/patientController');
 const { verifyToken, verifyRole } = require('../middleware/auth');
 
@@ -14,5 +15,6 @@ router.get('/:id', verifyToken, getPatientById);
 router.get('/:id/medical-file', verifyToken, getPatientMedicalFile);
 router.get('/:id/appointments', verifyToken, getPatientAppointments);
 router.post('/book', verifyToken, verifyRole('Patient', 'Admin'), bookAppointment);
+router.put('/:id', verifyToken, verifyRole('Patient'), updatePatient);
 
 module.exports = router;

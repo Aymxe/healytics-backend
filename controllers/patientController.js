@@ -101,14 +101,18 @@ const bookAppointment = async (req, res) => {
       return res.status(409).json({ message: 'Patient already has an appointment at this time.' });
     }
 
-    const lastID = await db.query('SELECT AppointmentID FROM appointments ORDER BY AppointmentID DESC LIMIT 1');
-    const lastNum = lastID[0].length > 0 ? parseInt(lastID[0][0].AppointmentID.replace('A', '')) : 0;
+    // Sort numerically by stripping the 'A' prefix to avoid alphabetical ordering bugs (A9 > A10 alphabetically)
+    const [allIDs] = await db.query('SELECT AppointmentID FROM appointments');
+    const lastNum = allIDs.length > 0
+      ? Math.max(...allIDs.map(r => parseInt(r.AppointmentID.replace(/\D/g, '')) || 0))
+      : 0;
     const newID = `A${String(lastNum + 1).padStart(3, '0')}`;
 
     await db.query(
       'INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, Status) VALUES (?, ?, ?, ?, ?)',
       [newID, patientID, doctorID, appointmentDate, 'Pending']
     );
+    // reason/notes saved in future schema iteration — currently accepted but not stored
 
     res.status(201).json({ message: 'Appointment booked successfully.', appointmentID: newID });
 
@@ -118,10 +122,29 @@ const bookAppointment = async (req, res) => {
   }
 };
 
+const updatePatient = async (req, res) => {
+  const { id } = req.params;
+  if (req.user.refID !== id) {
+    return res.status(403).json({ message: 'You can only update your own profile.' });
+  }
+  const { age, gender } = req.body;
+  try {
+    await db.query(
+      'UPDATE patients SET Age = ?, Gender = ? WHERE PatientID = ?',
+      [age || null, gender || null, id]
+    );
+    res.status(200).json({ message: 'Profile updated successfully.' });
+  } catch (error) {
+    console.error('Update patient error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+};
+
 module.exports = {
   getAllPatients,
   getPatientById,
   getPatientMedicalFile,
   getPatientAppointments,
-  bookAppointment
+  bookAppointment,
+  updatePatient
 };

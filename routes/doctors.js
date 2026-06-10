@@ -6,7 +6,8 @@ const {
   getDoctorSchedule,
   getDoctorAppointments,
   updateAppointmentStatus,
-  addMedicalRecord
+  addMedicalRecord,
+  updateDoctorAvailability
 } = require('../controllers/doctorController');
 const { verifyToken, verifyRole } = require('../middleware/auth');
 
@@ -16,5 +17,6 @@ router.get('/:id/schedule', verifyToken, getDoctorSchedule);
 router.get('/:id/appointments', verifyToken, verifyRole('Doctor', 'Admin'), getDoctorAppointments);
 router.put('/appointments/:appointmentID/status', verifyToken, verifyRole('Doctor', 'Admin'), updateAppointmentStatus);
 router.post('/medical-record', verifyToken, verifyRole('Doctor', 'Admin'), addMedicalRecord);
+router.put('/:id/availability', verifyToken, verifyRole('Doctor', 'Admin'), updateDoctorAvailability);
 
 module.exports = router;

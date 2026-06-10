@@ -96,4 +96,16 @@ router.put('/doctors/:id/availability', verifyToken, verifyRole('Admin'), async 
   }
 });
 
+// Any authenticated user can fetch admin contact info
+router.get('/contact', verifyToken, async (req, res) => {
+  try {
+    const [admins] = await db.query(
+      'SELECT FullName, Role, Email, Phone, Department FROM adminprofiles WHERE IsActive = 1'
+    );
+    res.status(200).json(admins);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 module.exports = router;
