@@ -96,7 +96,7 @@ const updateAppointmentStatus = async (req, res) => {
     if (status === 'Cancelled') {
       try {
         const [appts] = await db.query(
-          `SELECT a.PatientID, a.DoctorID, a.AppointmentDate, d.Specialty, d.Name AS DoctorName
+          `SELECT a.PatientID, a.DoctorID, a.AppointmentDate, a.AppointmentTime, d.Specialty, d.Name AS DoctorName
            FROM appointments a
            JOIN doctors d ON a.DoctorID = d.DoctorID
            WHERE a.AppointmentID = ?`,
@@ -104,7 +104,7 @@ const updateAppointmentStatus = async (req, res) => {
         );
 
         if (appts.length > 0) {
-          const { PatientID, DoctorID, AppointmentDate, Specialty, DoctorName } = appts[0];
+          const { PatientID, DoctorID, AppointmentDate, AppointmentTime, Specialty, DoctorName } = appts[0];
 
           // Find another available doctor with same specialty
           const [alts] = await db.query(
@@ -141,8 +141,8 @@ const updateAppointmentStatus = async (req, res) => {
             const newApptID = `A${String(lastApptNum + 1).padStart(3, '0')}`;
 
             await db.query(
-              "INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, Status) VALUES (?, ?, ?, ?, 'Pending')",
-              [newApptID, PatientID, altDoctor.DoctorID, newDate]
+              "INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, AppointmentTime, Status) VALUES (?, ?, ?, ?, ?, 'Pending')",
+              [newApptID, PatientID, altDoctor.DoctorID, newDate, AppointmentTime || null]
             );
 
             msgBody = `Your appointment with ${DoctorName} was cancelled.\n\nWe have automatically booked you a new appointment:\n• Doctor: ${altDoctor.Name} (${altDoctor.Specialty})\n• Date: ${newDate}\n• Status: Pending\n\nYou can view it in the Appointments page.`;
