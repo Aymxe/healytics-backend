@@ -113,6 +113,23 @@ const bookAppointment = async (req, res) => {
       [newID, patientID, doctorID, appointmentDate, appointmentTime || null, 'Pending', reason || null]
     );
 
+    // Send confirmation message to patient
+    try {
+      const [[patient]] = await db.query('SELECT Name FROM patients WHERE PatientID = ?', [patientID]);
+      const [[doctor]] = await db.query('SELECT Name, Specialty FROM doctors WHERE DoctorID = ?', [doctorID]);
+      const [allMsgs] = await db.query('SELECT MessageID FROM messages');
+      const lastMsgNum = allMsgs.length > 0
+        ? Math.max(...allMsgs.map(r => parseInt(r.MessageID.replace(/\D/g, '')) || 0))
+        : 0;
+      const msgID = `MSG${String(lastMsgNum + 1).padStart(3, '0')}`;
+      const msgBody = `Your appointment has been confirmed!\n\n• Doctor: ${doctor?.Name} (${doctor?.Specialty})\n• Date: ${appointmentDate}${appointmentTime ? '\n• Time: ' + appointmentTime : ''}\n• Status: Pending\n\nPlease arrive on time. You can view or cancel from the Appointments page.`;
+      await db.query(
+        `INSERT INTO messages (MessageID, SenderID, SenderName, SenderRole, Subject, Body, Status, SentAt, RecipientID, RecipientName, Direction)
+         VALUES (?, 'SYSTEM', 'Healytics Support', 'System', 'Appointment Confirmed', ?, 'Unread', NOW(), ?, ?, 'ToUser')`,
+        [msgID, msgBody, patientID, patient?.Name || patientID]
+      );
+    } catch (_) {}
+
     res.status(201).json({ message: 'Appointment booked successfully.', appointmentID: newID });
 
   } catch (error) {
