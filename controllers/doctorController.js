@@ -113,42 +113,44 @@ const updateAppointmentStatus = async (req, res) => {
             [Specialty, DoctorID]
           );
 
-          let altDoctor;
+          let altDoctor = null;
           if (alts.length > 0) {
             altDoctor = alts[0];
           } else {
-            // Auto-create a backup doctor for this specialty
-            const [lastDoc] = await db.query('SELECT DoctorID FROM doctors ORDER BY DoctorID DESC LIMIT 1');
-            const lastNum = lastDoc.length > 0 ? parseInt(lastDoc[0].DoctorID.replace(/\D/g, '')) || 0 : 0;
-            const newDocID = `D${String(lastNum + 1).padStart(3, '0')}`;
-            const newDocName = `Dr. Support (${Specialty})`;
-            await db.query(
-              "INSERT IGNORE INTO doctors (DoctorID, Name, Specialty, Availability, HospitalID, MaxPatients) SELECT ?, ?, ?, 'Available', HospitalID, 12 FROM doctors WHERE DoctorID = ? LIMIT 1",
-              [newDocID, newDocName, Specialty, DoctorID]
+            // Try any real doctor with same specialty (even if Busy)
+            const [anyAlts] = await db.query(
+              'SELECT * FROM doctors WHERE Specialty = ? AND DoctorID != ? LIMIT 1',
+              [Specialty, DoctorID]
             );
-            altDoctor = { DoctorID: newDocID, Name: newDocName, Specialty };
+            if (anyAlts.length > 0) altDoctor = anyAlts[0];
           }
 
-          // Use original date if it's in the future, otherwise use tomorrow
-          const origDate = new Date(AppointmentDate);
-          const tomorrow = new Date();
-          tomorrow.setDate(tomorrow.getDate() + 1);
-          const newDate = origDate > new Date()
-            ? origDate.toISOString().slice(0, 10)
-            : tomorrow.toISOString().slice(0, 10);
+          let msgBody;
 
-          // Auto-book new appointment with the alternative doctor
-          const [lastAppt] = await db.query('SELECT AppointmentID FROM appointments ORDER BY AppointmentID DESC LIMIT 1');
-          const lastApptNum = lastAppt.length > 0 ? parseInt(lastAppt[0].AppointmentID.replace(/\D/g, '')) || 0 : 0;
-          const newApptID = `A${String(lastApptNum + 1).padStart(3, '0')}`;
+          if (altDoctor) {
+            // Use original date if it's in the future, otherwise use tomorrow
+            const origDate = new Date(AppointmentDate);
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const newDate = origDate > new Date()
+              ? origDate.toISOString().slice(0, 10)
+              : tomorrow.toISOString().slice(0, 10);
 
-          await db.query(
-            "INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, Status) VALUES (?, ?, ?, ?, 'Pending')",
-            [newApptID, PatientID, altDoctor.DoctorID, newDate]
-          );
+            // Auto-book new appointment with the alternative doctor
+            const [lastAppt] = await db.query('SELECT AppointmentID FROM appointments ORDER BY AppointmentID DESC LIMIT 1');
+            const lastApptNum = lastAppt.length > 0 ? parseInt(lastAppt[0].AppointmentID.replace(/\D/g, '')) || 0 : 0;
+            const newApptID = `A${String(lastApptNum + 1).padStart(3, '0')}`;
 
-          // Notify patient
-          const msgBody = `Your appointment with ${DoctorName} was cancelled.\n\nWe have automatically booked you a new appointment:\n• Doctor: ${altDoctor.Name} (${altDoctor.Specialty})\n• Date: ${newDate}\n• Status: Pending\n\nYou can view it in the Appointments page.`;
+            await db.query(
+              "INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, Status) VALUES (?, ?, ?, ?, 'Pending')",
+              [newApptID, PatientID, altDoctor.DoctorID, newDate]
+            );
+
+            msgBody = `Your appointment with ${DoctorName} was cancelled.\n\nWe have automatically booked you a new appointment:\n• Doctor: ${altDoctor.Name} (${altDoctor.Specialty})\n• Date: ${newDate}\n• Status: Pending\n\nYou can view it in the Appointments page.`;
+          } else {
+            // No real alternative doctor found — notify patient to rebook manually
+            msgBody = `Your appointment with ${DoctorName} was cancelled.\n\nUnfortunately, no other ${Specialty} doctor is currently available in our system. Please visit the Appointments page to book with another doctor.`;
+          }
 
           const [allMsgs] = await db.query('SELECT MessageID FROM messages');
           const lastMsgNum = allMsgs.length > 0
