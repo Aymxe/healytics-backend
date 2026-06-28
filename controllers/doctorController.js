@@ -93,11 +93,11 @@ const updateAppointmentStatus = async (req, res) => {
       return res.status(404).json({ message: 'Appointment not found.' });
     }
 
-    // When cancelled by doctor: find alternative and notify patient
+    // When cancelled by doctor: auto-book with alternative doctor + notify patient
     if (status === 'Cancelled') {
       try {
         const [appts] = await db.query(
-          `SELECT a.PatientID, a.DoctorID, d.Specialty, d.Name AS DoctorName
+          `SELECT a.PatientID, a.DoctorID, a.AppointmentDate, d.Specialty, d.Name AS DoctorName
            FROM appointments a
            JOIN doctors d ON a.DoctorID = d.DoctorID
            WHERE a.AppointmentID = ?`,
@@ -105,7 +105,7 @@ const updateAppointmentStatus = async (req, res) => {
         );
 
         if (appts.length > 0) {
-          const { PatientID, DoctorID, Specialty, DoctorName } = appts[0];
+          const { PatientID, DoctorID, AppointmentDate, Specialty, DoctorName } = appts[0];
 
           // Find another available doctor with same specialty
           const [alts] = await db.query(
@@ -113,10 +113,9 @@ const updateAppointmentStatus = async (req, res) => {
             [Specialty, DoctorID]
           );
 
-          let msgBody;
+          let altDoctor;
           if (alts.length > 0) {
-            const alt = alts[0];
-            msgBody = `Your appointment was cancelled by ${DoctorName}.\n\nWe found an alternative: ${alt.Name} (${alt.Specialty}) is currently available. You can book directly from the Appointments page.`;
+            altDoctor = alts[0];
           } else {
             // Auto-create a backup doctor for this specialty
             const [lastDoc] = await db.query('SELECT DoctorID FROM doctors ORDER BY DoctorID DESC LIMIT 1');
@@ -127,10 +126,30 @@ const updateAppointmentStatus = async (req, res) => {
               "INSERT IGNORE INTO doctors (DoctorID, Name, Specialty, Availability, HospitalID, MaxPatients) SELECT ?, ?, ?, 'Available', HospitalID, 12 FROM doctors WHERE DoctorID = ? LIMIT 1",
               [newDocID, newDocName, Specialty, DoctorID]
             );
-            msgBody = `Your appointment was cancelled by ${DoctorName}.\n\nWe added ${newDocName} to our team. You can now book with them from the Appointments page.`;
+            altDoctor = { DoctorID: newDocID, Name: newDocName, Specialty };
           }
 
-          // Send system message to patient
+          // Use original date if it's in the future, otherwise use tomorrow
+          const origDate = new Date(AppointmentDate);
+          const tomorrow = new Date();
+          tomorrow.setDate(tomorrow.getDate() + 1);
+          const newDate = origDate > new Date()
+            ? origDate.toISOString().slice(0, 10)
+            : tomorrow.toISOString().slice(0, 10);
+
+          // Auto-book new appointment with the alternative doctor
+          const [lastAppt] = await db.query('SELECT AppointmentID FROM appointments ORDER BY AppointmentID DESC LIMIT 1');
+          const lastApptNum = lastAppt.length > 0 ? parseInt(lastAppt[0].AppointmentID.replace(/\D/g, '')) || 0 : 0;
+          const newApptID = `A${String(lastApptNum + 1).padStart(3, '0')}`;
+
+          await db.query(
+            "INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, Status) VALUES (?, ?, ?, ?, 'Pending')",
+            [newApptID, PatientID, altDoctor.DoctorID, newDate]
+          );
+
+          // Notify patient
+          const msgBody = `Your appointment with ${DoctorName} was cancelled.\n\nWe have automatically booked you a new appointment:\n• Doctor: ${altDoctor.Name} (${altDoctor.Specialty})\n• Date: ${newDate}\n• Status: Pending\n\nYou can view it in the Appointments page.`;
+
           const [allMsgs] = await db.query('SELECT MessageID FROM messages');
           const lastMsgNum = allMsgs.length > 0
             ? Math.max(...allMsgs.map(r => parseInt(r.MessageID.replace(/\D/g, '')) || 0))
@@ -138,15 +157,13 @@ const updateAppointmentStatus = async (req, res) => {
           const newMsgID = `MSG${String(lastMsgNum + 1).padStart(3, '0')}`;
 
           await db.query(
-            `INSERT INTO messages (MessageID, SenderID, SenderName, SenderRole, Subject, Body, Status, SentAt, RecipientID, Direction)
-             VALUES (?, 'SYSTEM', 'Healytics Support', 'System', 'Appointment Cancelled — Alternative Available', ?, 'Unread', NOW(), ?, 'ToUser')`,
-            [newMsgID, msgBody, PatientID]
-          ).catch(() => {
-            // RecipientID / Direction columns might not exist yet — ignore silently
-          });
+            `INSERT INTO messages (MessageID, SenderID, SenderName, SenderRole, Subject, Body, Status, SentAt, RecipientID, RecipientName, Direction)
+             VALUES (?, 'SYSTEM', 'Healytics Support', 'System', 'New Appointment Booked Automatically', ?, 'Unread', NOW(), ?, ?, 'ToUser')`,
+            [newMsgID, msgBody, PatientID, PatientID]
+          ).catch(() => {});
         }
       } catch (refErr) {
-        console.error('Referral notification error:', refErr.sqlMessage || refErr.message);
+        console.error('Auto-referral error:', refErr.sqlMessage || refErr.message);
       }
     }
 
