@@ -85,7 +85,7 @@ const getPatientAppointments = async (req, res) => {
 };
 
 const bookAppointment = async (req, res) => {
-  const { patientID, doctorID, appointmentDate, reason } = req.body;
+  const { patientID, doctorID, appointmentDate, appointmentTime, reason } = req.body;
 
   if (!patientID || !doctorID || !appointmentDate) {
     return res.status(400).json({ message: 'PatientID, DoctorID and date are required.' });
@@ -109,8 +109,8 @@ const bookAppointment = async (req, res) => {
     const newID = `A${String(lastNum + 1).padStart(3, '0')}`;
 
     await db.query(
-      'INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, Status, SymptomInput) VALUES (?, ?, ?, ?, ?, ?)',
-      [newID, patientID, doctorID, appointmentDate, 'Pending', reason || null]
+      'INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, AppointmentTime, Status, SymptomInput) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [newID, patientID, doctorID, appointmentDate, appointmentTime || null, 'Pending', reason || null]
     );
 
     res.status(201).json({ message: 'Appointment booked successfully.', appointmentID: newID });
