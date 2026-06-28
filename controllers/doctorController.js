@@ -55,13 +55,12 @@ const getDoctorAppointments = async (req, res) => {
   const { id } = req.params;
   try {
     const [appointments] = await db.query(
-      `SELECT a.*,
+      `SELECT a.AppointmentID, a.PatientID, a.DoctorID, a.AppointmentDate, a.AppointmentTime, a.Status,
+              a.SymptomInput,
               COALESCE(p.Name, 'Unknown Patient') AS PatientName,
               p.Age,
               p.Gender,
-              p.SymptomInput,
-              p.RecommendedSpecialty,
-              a.PatientID
+              p.RecommendedSpecialty
        FROM appointments a
        LEFT JOIN patients p ON a.PatientID = p.PatientID
        WHERE a.DoctorID = ?
