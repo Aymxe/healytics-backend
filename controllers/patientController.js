@@ -109,10 +109,9 @@ const bookAppointment = async (req, res) => {
     const newID = `A${String(lastNum + 1).padStart(3, '0')}`;
 
     await db.query(
-      'INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, Status) VALUES (?, ?, ?, ?, ?)',
-      [newID, patientID, doctorID, appointmentDate, 'Pending']
+      'INSERT INTO appointments (AppointmentID, PatientID, DoctorID, AppointmentDate, Status, SymptomInput) VALUES (?, ?, ?, ?, ?, ?)',
+      [newID, patientID, doctorID, appointmentDate, 'Pending', reason || null]
     );
-    // reason/notes saved in future schema iteration — currently accepted but not stored
 
     res.status(201).json({ message: 'Appointment booked successfully.', appointmentID: newID });
 
